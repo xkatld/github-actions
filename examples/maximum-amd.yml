@@ -1,0 +1,233 @@
+name: 极限型-AMD
+
+on:
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: '保活时长（分钟）'
+        required: true
+        default: '30'
+        type: string
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 系统初始状态
+        run: |
+          echo "============================================="
+          echo "初始系统状态"
+          echo "============================================="
+          echo "内存和交换空间："
+          sudo free -h
+          echo ""
+          echo "可用存储："
+          sudo df -h
+          echo ""
+          
+      - name: 删除不需要的软件
+        run: |
+          set -euo pipefail
+          
+          echo "============================================="
+          echo "删除不需要的软件"
+          echo "============================================="
+          echo ""
+          
+          SPACE_BEFORE=$(df --output=avail -B 1 / | tail -1)
+          
+          remove_dir() {
+            local dir="$1"
+            local name="$2"
+            if [[ -d "$dir" ]] || [[ -f "$dir" ]]; then
+              echo -n "删除 $name... "
+              local size_mb=$(sudo du -sm "$dir" 2>/dev/null | cut -f1 || echo "0")
+              sudo rm -rf "$dir"
+              echo "释放 ${size_mb} MB"
+            else
+              echo "跳过 $name (未找到)"
+            fi
+          }
+          
+          # 极限型 - 删除所有可删除的软件
+          
+          # 第一步：卸载APT软件包
+          echo ""
+          echo "正在卸载APT软件包..."
+          sudo apt-get remove -y --purge \
+            microsoft-edge-stable \
+            azure-cli \
+            google-cloud-cli \
+            google-chrome-stable \
+            firefox \
+            powershell \
+            kubectl \
+            snapd \
+            'temurin-*-jdk' \
+            'llvm-*-dev' \
+            'openjdk-*-jre-headless' \
+            'openjdk-*-jdk-headless' \
+            2>/dev/null || true
+          
+          sudo apt-get autoremove -y 2>/dev/null || true
+          echo "APT软件包卸载完成"
+          echo ""
+          
+          # 第二步：删除目录（包括APT残留和非APT软件）
+          remove_dir "/usr/share/dotnet" ".NET SDK"
+          remove_dir "/usr/local/lib/android" "Android SDK"
+          remove_dir "/usr/local/.ghcup" "GHCup"
+          remove_dir "/opt/hostedtoolcache" "GitHub 工具缓存"
+          remove_dir "/usr/lib/jvm" "Java JVM"
+          remove_dir "/usr/share/java" "Java 共享文件"
+          remove_dir "/usr/share/swift" "Swift"
+          remove_dir "/usr/local/share/powershell" "PowerShell"
+          remove_dir "/opt/microsoft/powershell" "PowerShell (opt)"
+          remove_dir "/opt/microsoft/msedge" "Microsoft Edge"
+          remove_dir "/opt/az" "Azure CLI"
+          for az_dir in /usr/share/az_*; do
+            if [ -d "$az_dir" ]; then
+              remove_dir "$az_dir" "Azure CLI 残留"
+            fi
+          done
+          remove_dir "/usr/lib/google-cloud-sdk" "Google Cloud SDK"
+          remove_dir "/usr/local/aws-cli" "AWS CLI"
+          remove_dir "/usr/local/aws-sam-cli" "AWS SAM CLI"
+          remove_dir "/usr/local/sessionmanagerplugin" "AWS Session Manager"
+          remove_dir "/usr/lib/firefox" "Firefox"
+          remove_dir "/opt/google/chrome" "Google Chrome"
+          remove_dir "/usr/local/share/chromium" "Chromium"
+          remove_dir "/usr/local/julia1.11.7" "Julia"
+          remove_dir "/usr/share/miniconda" "Miniconda"
+          remove_dir "/etc/skel/.cargo" "Rust Cargo"
+          remove_dir "/home/runner/.cargo" "Rust Cargo"
+          remove_dir "/home/packer/.cargo" "Rust Cargo"
+          remove_dir "/home/runner/.rustup" "Rustup"
+          remove_dir "/home/packer/.rustup" "Rustup"
+          remove_dir "/usr/local/n" "Node 版本管理器"
+          remove_dir "/usr/lib/llvm-16" "LLVM 16"
+          remove_dir "/usr/lib/llvm-17" "LLVM 17"
+          remove_dir "/usr/lib/llvm-18" "LLVM 18"
+          remove_dir "/usr/share/gradle-9.1.0" "Gradle"
+          remove_dir "/usr/share/kotlinc" "Kotlin"
+          remove_dir "/opt/pipx" "Pipx"
+          remove_dir "/opt/actionarchivecache" "Action Archive Cache"
+          remove_dir "/opt/runner-cache" "Runner Cache"
+          remove_dir "/opt/hca" "HCA"
+          remove_dir "/usr/share/man" "手册页"
+          remove_dir "/usr/share/doc" "文档"
+          remove_dir "/usr/local/doc" "本地文档"
+          remove_dir "/usr/share/locale" "多语言支持"
+          remove_dir "/usr/share/fonts" "字体文件"
+          remove_dir "/usr/share/i18n" "国际化数据"
+          remove_dir "/usr/lib/snapd" "Snapd"
+          remove_dir "/var/lib/snapd" "Snapd 数据"
+          remove_dir "/home/linuxbrew/.linuxbrew" "Homebrew"
+          remove_dir "/usr/src" "内核源码"
+          
+          echo -n "删除 Docker 镜像... "
+          sudo docker image prune --all --force > /dev/null 2>&1
+          echo "完成"
+          
+          echo -n "最终清理... "
+          sudo apt-get clean > /dev/null 2>&1 || true
+          echo "完成"
+          
+          SPACE_AFTER=$(df --output=avail -B 1 / | tail -1)
+          SPACE_FREED=$((SPACE_AFTER - SPACE_BEFORE))
+          SPACE_FREED_MB=$((SPACE_FREED / 1024 / 1024))
+          
+          echo ""
+          echo "总共释放空间: ${SPACE_FREED_MB} MB"
+          echo ""
+          
+      - name: 检出代码仓库
+        uses: actions/checkout@v4
+        
+      - name: 显示优化结果
+        run: |
+          echo "============================================="
+          echo "✅ 极限型优化完成"
+          echo "============================================="
+          echo ""
+          echo "📊 存储状态："
+          df -h | grep -E '(Filesystem|/$)'
+          echo ""
+          echo "🧠 内存状态："
+          free -h
+          echo ""
+          ROOT_AVAIL=$(df -BG --output=avail / | tail -1 | tr -d 'G ')
+          echo "🎉 根目录可用空间: ${ROOT_AVAIL} GB"
+          echo "============================================="
+          echo ""
+          
+      - name: 安装并启动应用
+        run: |
+          if [ -f "start.sh" ]; then
+            echo "正在启动应用..."
+            bash start.sh
+          else
+            echo "警告：未找到 start.sh 文件，跳过应用启动"
+          fi
+          
+      - name: 保持工作流运行
+        run: |
+          echo "============================================="
+          echo "🚀 启动保活进程"
+          echo "============================================="
+          echo ""
+          
+          DURATION_MINUTES=${{ inputs.duration }}
+          DURATION_SECONDS=$((DURATION_MINUTES * 60))
+          
+          echo "⏱️  设置运行时长: ${DURATION_MINUTES} 分钟"
+          echo ""
+          
+          START_TIME=$(date +%s)
+          END_TIME=$((START_TIME + DURATION_SECONDS))
+          ITERATION=0
+          
+          while true; do
+            ITERATION=$((ITERATION + 1))
+            CURRENT_TIME=$(date +%s)
+            ELAPSED=$((CURRENT_TIME - START_TIME))
+            REMAINING=$((END_TIME - CURRENT_TIME))
+            
+            if [ $REMAINING -le 0 ]; then
+              echo "============================================="
+              echo "⏰ 已达到设置的运行时长"
+              echo "============================================="
+              echo "运行了 ${DURATION_MINUTES} 分钟，现在退出"
+              echo ""
+              break
+            fi
+            
+            ELAPSED_HOURS=$((ELAPSED / 3600))
+            ELAPSED_MINS=$(((ELAPSED % 3600) / 60))
+            ELAPSED_SECS=$((ELAPSED % 60))
+            REMAINING_MINS=$((REMAINING / 60))
+            REMAINING_SECS=$((REMAINING % 60))
+            
+            DISK_USED=$(df -h / | tail -1 | awk '{print $3}')
+            DISK_AVAIL=$(df -h / | tail -1 | awk '{print $4}')
+            DISK_PERCENT=$(df -h / | tail -1 | awk '{print $5}')
+            MEM_USED=$(free -h | grep Mem | awk '{print $3}')
+            MEM_AVAIL=$(free -h | grep Mem | awk '{print $7}')
+            
+            echo "============================================="
+            echo "📊 状态报告 #${ITERATION}"
+            echo "============================================="
+            echo "⏰ 已运行: ${ELAPSED_HOURS}小时 ${ELAPSED_MINS}分 ${ELAPSED_SECS}秒"
+            echo "⏳ 剩余时间: ${REMAINING_MINS}分 ${REMAINING_SECS}秒"
+            echo "📅 当前时间: $(date '+%Y-%m-%d %H:%M:%S')"
+            echo ""
+            echo "💾 磁盘使用: 已用 ${DISK_USED} | 可用 ${DISK_AVAIL} | 使用率 ${DISK_PERCENT}"
+            echo "🧠 内存使用: 已用 ${MEM_USED} | 可用 ${MEM_AVAIL}"
+            echo ""
+            echo "🔄 下次更新将在 5 分钟后..."
+            echo "============================================="
+            echo ""
+            
+            sleep 300
+          done

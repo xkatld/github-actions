@@ -1,0 +1,118 @@
+name: 标准型-AMD
+
+on:
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: '保活时长（分钟）'
+        required: true
+        default: '30'
+        type: string
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 系统初始状态
+        run: |
+          echo "============================================="
+          echo "系统状态"
+          echo "============================================="
+          echo "内存和交换空间："
+          sudo free -h
+          echo ""
+          echo "可用存储："
+          sudo df -h
+          echo ""
+          
+      - name: 检出代码仓库
+        uses: actions/checkout@v4
+        
+      - name: 系统信息
+        run: |
+          echo "============================================="
+          echo "✅ 标准型（未优化）"
+          echo "============================================="
+          echo ""
+          echo "📊 存储状态："
+          df -h | grep -E '(Filesystem|/$)'
+          echo ""
+          echo "🧠 内存状态："
+          free -h
+          echo ""
+          ROOT_AVAIL=$(df -BG --output=avail / | tail -1 | tr -d 'G ')
+          echo "💾 根目录可用空间: ${ROOT_AVAIL} GB"
+          echo "============================================="
+          echo ""
+          
+      - name: 安装并启动应用
+        run: |
+          if [ -f "start.sh" ]; then
+            echo "正在启动应用..."
+            bash start.sh
+          else
+            echo "警告：未找到 start.sh 文件，跳过应用启动"
+          fi
+          
+      - name: 保持工作流运行
+        run: |
+          echo "============================================="
+          echo "🚀 启动保活进程"
+          echo "============================================="
+          echo ""
+          
+          DURATION_MINUTES=${{ inputs.duration }}
+          DURATION_SECONDS=$((DURATION_MINUTES * 60))
+          
+          echo "⏱️  设置运行时长: ${DURATION_MINUTES} 分钟"
+          echo ""
+          
+          START_TIME=$(date +%s)
+          END_TIME=$((START_TIME + DURATION_SECONDS))
+          ITERATION=0
+          
+          while true; do
+            ITERATION=$((ITERATION + 1))
+            CURRENT_TIME=$(date +%s)
+            ELAPSED=$((CURRENT_TIME - START_TIME))
+            REMAINING=$((END_TIME - CURRENT_TIME))
+            
+            if [ $REMAINING -le 0 ]; then
+              echo "============================================="
+              echo "⏰ 已达到设置的运行时长"
+              echo "============================================="
+              echo "运行了 ${DURATION_MINUTES} 分钟，现在退出"
+              echo ""
+              break
+            fi
+            
+            ELAPSED_HOURS=$((ELAPSED / 3600))
+            ELAPSED_MINS=$(((ELAPSED % 3600) / 60))
+            ELAPSED_SECS=$((ELAPSED % 60))
+            REMAINING_MINS=$((REMAINING / 60))
+            REMAINING_SECS=$((REMAINING % 60))
+            
+            DISK_USED=$(df -h / | tail -1 | awk '{print $3}')
+            DISK_AVAIL=$(df -h / | tail -1 | awk '{print $4}')
+            DISK_PERCENT=$(df -h / | tail -1 | awk '{print $5}')
+            MEM_USED=$(free -h | grep Mem | awk '{print $3}')
+            MEM_AVAIL=$(free -h | grep Mem | awk '{print $7}')
+            
+            echo "============================================="
+            echo "📊 状态报告 #${ITERATION}"
+            echo "============================================="
+            echo "⏰ 已运行: ${ELAPSED_HOURS}小时 ${ELAPSED_MINS}分 ${ELAPSED_SECS}秒"
+            echo "⏳ 剩余时间: ${REMAINING_MINS}分 ${REMAINING_SECS}秒"
+            echo "📅 当前时间: $(date '+%Y-%m-%d %H:%M:%S')"
+            echo ""
+            echo "💾 磁盘使用: 已用 ${DISK_USED} | 可用 ${DISK_AVAIL} | 使用率 ${DISK_PERCENT}"
+            echo "🧠 内存使用: 已用 ${MEM_USED} | 可用 ${MEM_AVAIL}"
+            echo ""
+            echo "🔄 下次更新将在 5 分钟后..."
+            echo "============================================="
+            echo ""
+            
+            sleep 300
+          done
+
